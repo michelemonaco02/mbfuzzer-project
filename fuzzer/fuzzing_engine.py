@@ -120,8 +120,8 @@ def single_fuzzing_engine_client(MessageModel):
                 MSG_QUEUE.put(line.strip())
 
     while loop_break:
-
         if g.DEBUG_FLAG_CLIENT_MSG_SENDING == False:
+            """
             mtype_schedule_probability = random.random()
             dependency_exist = g.dependency_event.has_dependency_with_flag("client") or g.dependency_event.has_dependency_with_flag("both")
             if dependency_exist and mtype_schedule_probability >= 0.5:  
@@ -136,6 +136,40 @@ def single_fuzzing_engine_client(MessageModel):
                 message_type = MessageModel.choose_next_action(response_state)
                 if message_type in g.all_client_dependency and mtype_schedule_probability >= 0.5:
                     g.cur_client_dependency = random.choice(g.all_client_dependency[message_type]) 
+                    """
+            use_dependency = (
+                g.ENABLE_DEPENDENCY_RULES and
+                random.random() < g.DEPENDENCY_RULE_PROBABILITY
+            )
+
+            dependency_exist = (
+                g.ENABLE_DEPENDENCY_RULES and
+                (
+                    g.dependency_event.has_dependency_with_flag("client") or
+                    g.dependency_event.has_dependency_with_flag("both")
+                )
+            )
+
+            if dependency_exist and use_dependency:
+                with g.dependency_event_lock:
+                    if g.dependency_event.has_dependency_with_flag("client"):
+                        dependency = g.dependency_event.get_dependencies_with_flag("client")
+                        message_type = dependency["passive"]["mtype"]
+                    elif g.dependency_event.has_dependency_with_flag("both"):
+                        dependency = g.dependency_event.get_dependencies_with_flag("both")
+                        message_type = dependency["passive"]["mtype"]
+            else:
+                message_type = MessageModel.choose_next_action(response_state)
+                #eventualmente aggiungi messaggio nella dependency queue, sceglilo in maniera randomica
+                if (
+                    g.ENABLE_DEPENDENCY_RULES and
+                    use_dependency and
+                    message_type in g.all_client_dependency
+                ):
+                    g.cur_client_dependency = random.choice(
+                        g.all_client_dependency[message_type]
+        )
+            
 
             cur_random_num = random.random()
             if response_state == g.STATE_CLIENT_INITIAL and message_type == g.MSG_TYPE_CONNECT and g.DUPLICATE_DIFF_CONNECT_NUM > g.FUZZING_CONNECT_MAX_PLATEAU and cur_random_num < 0.8:
@@ -170,11 +204,16 @@ def single_fuzzing_engine_client(MessageModel):
                 message = generate_message(message_type)
                 g.CLIENT_SELECT_CORPUS_FLAG = False
         
-            if g.cur_client_dependency != None and len(g.cur_client_dependency) == 2:
-                flag = g.cur_client_dependency["passive"]["flag"]
-                new_dict = {"passive": g.cur_client_dependency["passive"]}
-                with g.dependency_event_lock:
-                    g.dependency_event.add_dependency(flag, new_dict) 
+            #dobbiamo bloccare anche la creazione di nuove dependency, non solo il consumo 
+            if (
+                    g.ENABLE_DEPENDENCY_RULES and
+                    g.cur_client_dependency != None and
+                    len(g.cur_client_dependency) == 2
+                ):
+                    flag = g.cur_client_dependency["passive"]["flag"]
+                    new_dict = {"passive": g.cur_client_dependency["passive"]}
+                    with g.dependency_event_lock:
+                        g.dependency_event.add_dependency(flag, new_dict) 
         else:
             if not MSG_QUEUE.empty():
                 message = MSG_QUEUE.get()
@@ -281,7 +320,8 @@ def fuzzing_engine_bridge_broker(MQTTBroker, MessageModel):
 def bridge_broker_single_fuzzing_loop(MQTTBroker, MessageModel):
     response_state = g.STATE_BRIDGE_STATE
     g.Broker_Fuzzing_Thread_ID = threading.current_thread().ident
-
+    
+    """
     mtype_schedule_probability = random.random()
     dependency_exist = g.dependency_event.has_dependency_with_flag("both")
     if dependency_exist and mtype_schedule_probability >= 0.5:
@@ -293,6 +333,34 @@ def bridge_broker_single_fuzzing_loop(MQTTBroker, MessageModel):
         message_type = MessageModel.choose_next_action(response_state)
         if message_type in g.all_broker_dependency and mtype_schedule_probability >= 0.5:
             g.cur_broker_dependency = random.choice(g.all_broker_dependency[message_type])
+    """ 
+
+    use_dependency = (
+        g.ENABLE_DEPENDENCY_RULES and
+        random.random() < g.DEPENDENCY_RULE_PROBABILITY
+    )
+
+    dependency_exist = (
+        g.ENABLE_DEPENDENCY_RULES and
+        g.dependency_event.has_dependency_with_flag("both")
+    )
+
+    if dependency_exist and use_dependency:
+        if g.dependency_event.has_dependency_with_flag("both"):
+            with g.dependency_event_lock:
+                dependency = g.dependency_event.get_dependencies_with_flag("both")
+                message_type = dependency["passive"]["mtype"]
+    else:
+        message_type = MessageModel.choose_next_action(response_state)
+
+        if (
+            g.ENABLE_DEPENDENCY_RULES and
+            use_dependency and
+            message_type in g.all_broker_dependency
+        ):
+            g.cur_broker_dependency = random.choice(
+                g.all_broker_dependency[message_type]
+            )
 
     if g.FUZZING_BROKER_PLATEAU > g.FUZZING_MAX_PLATEAU and random.random() < 0.5 and message_type in g.FUZZING_NETWORK_RESPONSE_CORPUS:
         protocol_version = g.broker_protocol_version
@@ -307,7 +375,11 @@ def bridge_broker_single_fuzzing_loop(MQTTBroker, MessageModel):
         message = generate_message(message_type)
         g.BROKER_SELECT_CORPUS_FLAG = False
 
-    if g.cur_broker_dependency != None and len(g.cur_broker_dependency) == 2:
+    if (
+        g.ENABLE_DEPENDENCY_RULES and
+        g.cur_broker_dependency != None and
+        len(g.cur_broker_dependency) == 2
+    ):
         flag = g.cur_broker_dependency["passive"]["flag"]
         new_dict = {"passive": g.cur_broker_dependency["passive"]}
         with g.dependency_event_lock:

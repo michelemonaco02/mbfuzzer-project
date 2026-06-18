@@ -7,6 +7,25 @@ import hashlib
 from collections import defaultdict
 import type.DependencyQueue as DQ
 import threading
+import os
+from datetime import datetime
+
+#Scheduling policy configuration
+#Available values: 
+# "q_learning" -> original MBFuzzer scheduler
+# "random" -> random message scheduler 
+# "state-independent" -> state independent reward based scheduler 
+SCHEDULER_POLICY = "q_learning"
+
+#Dependecy rules scheduling 
+#If False, dependecy rules are completely ignored 
+ENABLE_DEPENDENCY_RULES = True
+
+# Probability of selecting an available dependency rule.
+# 0.0 -> never use dependency rules
+# 0.5 -> original behavior
+# 1.0 -> always use dependency rules when available
+DEPENDENCY_RULE_PROBABILITY = 0.5
 
 # =============================================USER DEFINE VARIABLE=============================================
 
@@ -14,7 +33,24 @@ import threading
 # Time limit (seconds)
 TIME_LIMITE_SECONDS = 21600
 # Output Directory
-FUZZING_OUTPUT_DIR = "./fuzzing_outputs/"
+# Output Directory
+BASE_FUZZING_OUTPUT_DIR = "/root/fuzzing_outputs/"
+
+if ENABLE_DEPENDENCY_RULES:
+    DEPENDENCY_POLICY_NAME = f"dep_p{int(DEPENDENCY_RULE_PROBABILITY * 100):03d}"
+else:
+    DEPENDENCY_POLICY_NAME = "dep_disabled"
+
+EXPERIMENT_NAME = f"{SCHEDULER_POLICY}_{DEPENDENCY_POLICY_NAME}"
+
+# Automatically generated run identifier.
+# Example: run_20260618_143205_pid12345
+RUN_ID = os.environ.get(
+    "MBFUZZER_RUN_ID",
+    datetime.now().strftime("run_%Y%m%d_%H%M%S") + f"_pid{os.getpid()}"
+)
+
+FUZZING_OUTPUT_DIR = BASE_FUZZING_OUTPUT_DIR + EXPERIMENT_NAME + "/" + RUN_ID + "/"
 
 # Broker IP and Port
 BROKER_IP_1 = "172.199.0.7"
@@ -57,6 +93,7 @@ MSG_TYPE_PINGRESP = "PINGRESP"
 MSG_TYPE_DISCONNECT = "DISCONNECT"
 MSG_TYPE_AUTH = "AUTH"
 # MSG_TYPE_INVALID = "INVALID"
+
 
 # Q-Learning parameters
 ACTIONS = [

@@ -25,7 +25,7 @@ ENABLE_DEPENDENCY_RULES = True
 # 0.0 -> never use dependency rules
 # 0.5 -> original behavior
 # 1.0 -> always use dependency rules when available
-DEPENDENCY_RULE_PROBABILITY = 0.5
+DEPENDENCY_RULE_PROBABILITY = 1.0
 
 # =============================================USER DEFINE VARIABLE=============================================
 
@@ -34,7 +34,7 @@ DEPENDENCY_RULE_PROBABILITY = 0.5
 TIME_LIMITE_SECONDS = 21600
 # Output Directory
 # Output Directory
-BASE_FUZZING_OUTPUT_DIR = "/root/fuzzing_outputs/"
+BASE_FUZZING_OUTPUT_DIR = "./fuzzing_outputs/"
 
 if ENABLE_DEPENDENCY_RULES:
     DEPENDENCY_POLICY_NAME = f"dep_p{int(DEPENDENCY_RULE_PROBABILITY * 100):03d}"

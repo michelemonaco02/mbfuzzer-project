@@ -4,83 +4,86 @@ import globals as g
 
 
 class StateIndependentScheduler:
-    """State-independent reward-based message scheduler.
+    """State-independent reward-driven message scheduler.
 
-    This scheduler is a simplified version of the original Q-learning
-    scheduler: it learns one global value per MQTT message type, without
-    indexing values by protocol state.
+    This scheduler keeps the same public interface as QLearningTable, but
+    removes the response-state dimension.
 
-    Original Q-learning scheduler:
+    Original MBFuzzer Q-learning:
         Q[state][message_type]
 
-    State-independent scheduler:
-        Q[message_type]
+    This scheduler:
+        value[message_type]
 
-    The scheduler keeps the same public interface as QLearningTable so it can
-    be used by the existing fuzzing engine without changing the feedback logic.
+    The fuzzing engine still computes and passes response_state, cur_state,
+    and next_state, but this scheduler intentionally ignores them.
+
+    Since the update rule uses both positive and negative feedback, this
+    scheduler requests learn() calls also when reward = 0.
     """
 
-    def __init__(self, actions=g.ACTIONS):
+    def __init__(
+        self,
+        actions=g.ACTIONS,
+        learning_rate=g.ALPHA,
+        e_greedy=g.EPSILON,
+    ):
         self.actions = list(actions)
+        self.learning_rate = learning_rate
+        self.epsilon = e_greedy
+
+        # One global value per MQTT message type.
         self.values = {action: 0.0 for action in self.actions}
-        self.selection_counts = {action: 0 for action in self.actions}
-        self.reward_counts = {action: 0 for action in self.actions}
+
+        # Compatibility/debug view similar to QLearningTable.
+        self.global_state = "GLOBAL_STATE"
+        self.q_table = {self.global_state: self.values}
+
+        # Used by fuzzing_engine.py:
+        # if True, learn() is called also when no new inconsistency is found.
+        self.learn_on_zero_reward = True
 
     def choose_next_action(self, state):
         # The state argument is intentionally ignored.
-        # If no action has any reward yet, behave like the original
-        # QLearningTable implementation and choose randomly.
         if all(value == 0 for value in self.values.values()):
-            action = random.choice(self.actions)
-        else:
-            q_values = np.array([self.values[action] for action in self.actions])
-            probabilities = np.exp(q_values / g.TAU) / np.sum(
-                np.exp(q_values / g.TAU)
-            )
+            return random.choice(self.actions)
 
-            rand_num = np.random.rand()
-            cumulative_prob = 0.0
+        q_values = np.array([self.values[action] for action in self.actions])
 
-            action = self.actions[-1]
-            for candidate_action, prob in zip(self.actions, probabilities):
-                cumulative_prob += prob
-                if rand_num < cumulative_prob:
-                    action = candidate_action
-                    break
+        # Numerically stable softmax.
+        shifted_q_values = q_values - np.max(q_values)
+        probabilities = np.exp(shifted_q_values / g.TAU) / np.sum(
+            np.exp(shifted_q_values / g.TAU)
+        )
 
-        self.selection_counts[action] += 1
+        rand_num = np.random.rand()
+        cumulative_prob = 0.0
 
-        # Since the current fuzzing loop usually calls learn() only on positive
-        # feedback, we update the empirical value also after non-rewarding
-        # selections. This prevents old rewards from dominating forever.
-        self._update_value(action)
+        for action, prob in zip(self.actions, probabilities):
+            cumulative_prob += prob
+            if rand_num < cumulative_prob:
+                return action
 
-        return action
+        return self.actions[-1]
 
     def check_state_exist(self, state):
         # Kept for compatibility with QLearningTable.
+        # No state is created because all response states are ignored.
         pass
 
     def learn(self, cur_state, action, reward, next_state):
+        # cur_state and next_state are intentionally ignored.
         if action not in self.values:
             return
 
-        # If the action was selected through the dependency queue, it may
-        # receive a reward even if choose_next_action() did not select it.
-        # We still count it to keep the scheduler robust.
-        if self.selection_counts[action] == 0:
-            self.selection_counts[action] = 1
-
-        self.reward_counts[action] += reward
-        self._update_value(action)
-
-    def _update_value(self, action):
-        if self.selection_counts[action] == 0:
-            self.values[action] = 0.0
-        else:
-            self.values[action] = (
-                self.reward_counts[action] / self.selection_counts[action]
-            )
+        # Incremental reward update:
+        # value[action] <- value[action] + alpha * (reward - value[action])
+        #
+        # If reward = 1, the value moves upward.
+        # If reward = 0, the value decays downward.
+        self.values[action] += self.learning_rate * (
+            reward - self.values[action]
+        )
 
     def print_q_table(self):
         print(self.log_q_table())
@@ -89,16 +92,13 @@ class StateIndependentScheduler:
         content = "State-Independent Scheduler Table:\n"
 
         for action in self.actions:
-            content += (
-                f"{action}: value={self.values[action]:.4f}, "
-                f"selected={self.selection_counts[action]}, "
-                f"rewards={self.reward_counts[action]}\n"
-            )
+            content += f"{action}: value={self.values[action]:.4f}\n"
 
         q_values = np.array([self.values[action] for action in self.actions])
-        probabilities = np.exp(q_values / g.TAU) / np.sum(
-            np.exp(q_values / g.TAU)
+        shifted_q_values = q_values - np.max(q_values)
+        probabilities = np.exp(shifted_q_values / g.TAU) / np.sum(
+            np.exp(shifted_q_values / g.TAU)
         )
-        content += "\tprobabilities=" + str(probabilities) + "\n\n"
 
+        content += "\tprobabilities=" + str(probabilities) + "\n\n"
         return content

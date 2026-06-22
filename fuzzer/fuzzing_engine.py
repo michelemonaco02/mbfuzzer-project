@@ -273,11 +273,23 @@ def single_fuzzing_engine_client(MessageModel):
             diff_response_res = hnr.differetial_analysis_for_response(ClientFuzzers, message_type, message, "client")
             diff_forward_res = hnr.differetial_analysis_for_forward_pro(ClientFuzzers)
             
+            """
             if diff_response_res == True or diff_forward_res == True:
                 print(f"[+] New client diff_response_res ({len(g.DIFFERENTIAL_RESULTS)} found) in {message_type}.")
                 g.FUZZING_CLIENT_PLATEAU = 0
                 loop_break = False
                 MessageModel.learn(response_state, message_type, 1, new_response_state)
+                """
+            new_diff_found = diff_response_res == True or diff_forward_res == True
+            reward = 1 if new_diff_found else 0
+
+            if new_diff_found:
+                print(f"[+] New client diff_response_res ({len(g.DIFFERENTIAL_RESULTS)} found) in {message_type}.")
+                g.FUZZING_CLIENT_PLATEAU = 0
+                loop_break = False
+
+            if new_diff_found or getattr(MessageModel, "learn_on_zero_reward", False):
+                MessageModel.learn(response_state, message_type, reward, new_response_state)
 
             if diff_response_res == True:
                 filepath = do.save_interesting_message_to_queue(message_type, message)
@@ -414,13 +426,26 @@ def bridge_broker_single_fuzzing_loop(MQTTBroker, MessageModel):
             g.publish_request_queue[msg_hash] = (response_state, response_state)
 
     diff_response_res = hnr.differetial_analysis_for_response(MQTTBroker.client_sessions, message_type, message, "broker")
-    
+    """
     if diff_response_res == True:
         print(f"[+] New broker diff_response_res ({len(g.DIFFERENTIAL_RESULTS)} found) in {message_type}")
         MessageModel.learn(response_state, message_type, 1, response_state)
         filepath = do.save_interesting_message_to_queue(message_type, message)
         g.FUZZING_NETWORK_RESPONSE_CORPUS.setdefault(message_type, {}).setdefault(g.broker_protocol_version, []).append(filepath)
         g.FUZZING_BROKER_PLATEAU = 0
+        """
+    reward = 1 if diff_response_res == True else 0
+
+    if diff_response_res == True:
+        print(f"[+] New broker diff_response_res ({len(g.DIFFERENTIAL_RESULTS)} found) in {message_type}")
+        filepath = do.save_interesting_message_to_queue(message_type, message)
+        g.FUZZING_NETWORK_RESPONSE_CORPUS.setdefault(message_type, {}).setdefault(
+            g.broker_protocol_version, []
+        ).append(filepath)
+        g.FUZZING_BROKER_PLATEAU = 0
+
+    if diff_response_res == True or getattr(MessageModel, "learn_on_zero_reward", False):
+        MessageModel.learn(response_state, message_type, reward, response_state)
     
     client_sessions = MQTTBroker.client_sessions
     lengths = [value.forward_message.get_queue_length() for value in client_sessions.values()]

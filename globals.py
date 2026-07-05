@@ -14,8 +14,8 @@ from datetime import datetime
 #Available values: 
 # "q_learning" -> original MBFuzzer scheduler
 # "random" -> random message scheduler 
-# "state-independent" -> state independent reward based scheduler 
-SCHEDULER_POLICY = "q_learning"
+# "state_independent" -> state independent reward based scheduler 
+SCHEDULER_POLICY = "state_independent"
 
 #Dependecy rules scheduling 
 #If False, dependecy rules are completely ignored 
@@ -25,7 +25,7 @@ ENABLE_DEPENDENCY_RULES = True
 # 0.0 -> never use dependency rules
 # 0.5 -> original behavior
 # 1.0 -> always use dependency rules when available
-DEPENDENCY_RULE_PROBABILITY = 1.0
+DEPENDENCY_RULE_PROBABILITY = 0.5
 
 # =============================================USER DEFINE VARIABLE=============================================
 

@@ -41,7 +41,8 @@ class StateIndependentScheduler:
 
         # Used by fuzzing_engine.py:
         # if True, learn() is called also when no new inconsistency is found.
-        self.learn_on_zero_reward = True
+        #self.learn_on_zero_reward = True
+        self.learn_on_zero_reward = False
 
     def choose_next_action(self, state):
         # The state argument is intentionally ignored.
@@ -76,14 +77,9 @@ class StateIndependentScheduler:
         if action not in self.values:
             return
 
-        # Incremental reward update:
-        # value[action] <- value[action] + alpha * (reward - value[action])
-        #
-        # If reward = 1, the value moves upward.
-        # If reward = 0, the value decays downward.
-        self.values[action] += self.learning_rate * (
-            reward - self.values[action]
-        )
+        predict = self.values[action]
+        target = reward
+        self.values[action] += self.learning_rate * (target - predict)
 
     def print_q_table(self):
         print(self.log_q_table())
